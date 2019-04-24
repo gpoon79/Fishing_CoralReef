@@ -1,0 +1,212 @@
+---
+title: "STAT 474 Assignment 4"
+author: "George Poon"
+date: "April 8, 2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+load("Paper4Data.rdata")
+library(psych)
+library(gbm)
+```
+
+
+##Introduction
+A national government has attempted to curb the adverse impacts of overfishing on the coral reef fish population by implementing a Marine Protected Area (MAP) that prohibits fishing in one of the coral reef in its territorial ocean area while leaving another coral reef nearby as a control. In this research report, we will investigate the existence and magnitude of the average treatment effect of fishing prohibition around coral reef on the fish biomass. However, there are other environmental variables that effect both the treatment effectiveness and fish biomass that would interfere with a causal inference between the two variables. Therefore we will also attempt to remove all confounding variables to estimate the causal relationship.
+If we are able to find substantial evidence for the positive causal relationship between MAP and fish biomass, the government can then have confidence in broadening the prohibition to other coral reefs that would bring back the previously over-fished marine animals that may include several endangered species. Normalizing the fishing population would reinvigorate the local ecosystem and increase the coral reef area. As a result, sustainable food and tourism industry income would rise. Shoreline erosion would be reduced because coral reef acts as a natural barrier.
+The observational data consists of 132 transects, or fixed paths measured by divers along different parts the two coral reefs. The variables collected include Mass (calculated fish biomass), Treatment (coded 1 for protected and 0 for not), Prop.HC (proportion of the transect with hard coral), Prop.SD (proportion of the transect that was sand), Chain (average surface size of the coral along the transect) and Median.Height (average height of the coral along the transect).
+Since the transects are supposed to be collected at similar intervals throughout the coral reefs and assuming that all coral reefs are similar in their effects on the fishing population, we can assume that the variables are obtained the joint probability distributions of all coral reefs. Coupled with the fact that there is no data-snooping on the effect of the treatment, this allows for a level II inference to be conducted. Although the data is observational and not randomized, we are still aiming to approximate a causal inference between treatment and fish biomass by removing all confounding variables as previously mentioned. 
+
+
+##Exploratory Analysis
+```{r}
+summary(Paper4)
+```
+```{r}
+multi.hist(Paper4[,sapply(Paper4, is.numeric)])
+```
+```{r}
+t.test(Paper4[Paper4$Median.Height==0,]$Mass,Paper4[Paper4$Median.Height!=0,]$Mass)
+```
+
+Looking at the univariate summary of the variables, we can see that the unprotected reef is likely larger than than the protected reef as more transects belonged to the former category. The proportion of hard coral is lower than the proportion of sand areas in median, mean and quantiles, which may indicate the extensive damage overfishing has caused on the reef. The distribution of coral chain is narrower than that of median height which suggests that perhaps median height is more of a defining feature for the coral health. However, there are some median height measurements of 0 which seems problematic. This may be a result of missing imputations or perhaps the transect simply had a lot of flat areas. We hesitate to delete these data as we first need to confirm that they are missing at random. By running a independent 2 group t-test of the observations' biomass shown above, we discovered there was a significant difference in the scores for 0 median height (M=400) and non-zero median height (M=795) conditions; t(38)=-4.7, p=3.43e-05. Therefore the 0 value is likely a result of lack of observations of coral with any significant heights at all, therefore we will keep these observations. 
+
+From the univariate histograms (figure 1), we can see that the variable distributions look overall normal except for the biomass distribution which seems to have two peaks, one around 250 and another around 1250. This may indicate a difference in means between the two reefs which we will explore more later. 
+
+```{r,echo=F}
+levels(Paper4$Treatment) <- c("0","1")
+dat_mpa <- Paper4[Paper4$Treatment==1,]
+dat_na <- Paper4[Paper4$Treatment==0,]
+```
+
+```{r,echo=F}
+t.test(dat_mpa$Mass,dat_na$Mass)
+```
+Not surprsingly, by conducting an independent 2 group t-test between the treated/untreated coral reef's biomass, we find there was a significant difference in the scores for the treated (M=1087) and the untreated (M=475) conditions; t(98)=8.68, p=8.75e-14 Of course, this is not enough to make causal inference between treatment and biomass as the possiblity of confounding variables linger. The biomass differences might be a result of the inherent differences between the two coral reefs which we will have to verify later.
+```{r,echo=F}
+t.test(dat_mpa$Prop.HC,dat_na$Prop.HC)
+```
+```{r,echo=F}
+t.test(dat_mpa$Prop.SD,dat_na$Prop.SD)
+```
+```{r,echo}
+t.test(dat_mpa$Prop.HC,dat_na$Prop.HC)
+```
+```{r,echo=F}
+t.test(dat_mpa$Chain,dat_na$Chain)
+```
+```{r,echo=F}
+t.test(dat_mpa$Median.Height,dat_na$Median.Height)
+```
+In additional, we also ran independent 2 group t-test between all other variables between the treated/untreated coral reef. In these candidate confounding variables, we only found a significant difference for sand proportion of the scores for the treated (M=0.407) and the untreated (M=0.324) conditions; t(129)=2.65, p=0.009. The fact that the treated coral reef has more barren areas may indicate that it has more isolated areas that has sustained damages caused by overfishing. This difference may point to sand area being a confounding variable later. In all other variables, there was no significant differences between the two groups. However, this does not discount these variables from being investigated further. 
+
+```{r,echo=F}
+pairs(Paper4[,c(1,3,4)],panel=panel.smooth)
+```
+We then proceed to perform bivariate analysis between the variables in the original dataset. In figure 2 we can see that biomass seems to generally peak around the mean of hard coral proportion (0.25) and sand proportion (0.35) respectively. This suggests that a balanced environment is preferrable to marine species. Too much coral may lead to lack of catchable preys while lack of which may indicate ease of being caught by predators. We do need to take this observation with a grain of salt as number of observations also decrease towards either ends of proportions so the mean may be unreliable. As expected, the higher the sand proportion, the lower the hard coral proportion and vice versa since the former is a measurment of coral abundance while the latter is the measruement of coral absence. 
+```{r,echo=F}
+pairs(Paper4[,c(1,5,6)],panel=panel.smooth)
+```
+Figure 3 shows the bivariate plots between mass, coral surface area and median height. Again, biomass seems to peak around the mean of coral surface area for the same reason as hard coral proportion. However, biomass and median height have a positive relationship, which may hint that higher coral reef houses a more diverse and thus healthier marine ecosystem. This observation may hint at the confounding effect of median height in the causal influence of treatment. Similarly, surface area and median height also has a postive relationship as generally larger corals are also taller. 
+```{r,echo=F}
+pairs(Paper4[,c(2:4)],panel=panel.smooth)
+```
+In figure 4, we can observe the same bell curve relationships between hard coral/sand proportion and treatment. This relationship is flatter in the hard coral case than that of the sand proportion. This suggests that in general, the treated coral reef is more balanced in its coral/sand proportion while the untreated coral reef's proportion is more polarized. 
+
+```{r,echo=F}
+pairs(Paper4[,c(2,5,6)],panel=panel.smooth)
+```
+Similarly in figure 5 we also observe a similar bell curve relationships between surface area/median height and treatment for the same reason that the treated coral reef seems to be more balanced in its coral makeup. The relationship between height and treatment however appears to be weaker than that of surface area and treatment. 
+
+While usually there are risks associated with data snooping by learning variable relationships before machine learning, there are not much risk in this case as we are not using the information gathered here to generate hypothesis. Our hypothesis was already determined in the beginning to be that fishing prohibition treatment causally influences the fish biomass in coral reef. Other variables may have a confounding influences in this relationship but we will determine these through stochastic gradient boosting later. 
+##Machine Learning
+```{r,echo=F}
+set.seed(474)
+Paper4$Treatment <- as.character(Paper4$Treatment)
+ss <- sample(1:2,size=nrow(Paper4),replace=T,prob=c(0.5,0.5))
+dat1 <- Paper4[ss==1,]
+dat2 <- Paper4[ss==2,]
+```
+In order to approximate the confounding effects on both the treatment and biomass, we will use stochastic gradient boosting, a machine learning technique implemented using the gbm function to fit both variables against all other candidate variables. We first randomly divide the dataset into two disjoint,independent sets for training and testing purposes. This is done in order to prevent data snooping and overfitting. For both treatment and biomass, two separate gbm models were created, each with its own tuned paramters of interaction depth, minimum observations in the terminal node, shrinkage rate and the number of trees by looking at the out of bag error rate. 
+
+Each boosting machine would be created from one of the split dataset while the unused dataset in this be used to generate fitted values from the confounding function. The fitted values for treatment are also known as the propensity scores as they measure the likelihood of treatment assignment to each coral reef given their characteristics. The calculated propensity scores/fitted values would then be subtracted from the unused dataset's actual values to generate one haf of the purged values approximately devoid of confounding effects. The other half of the purged values would be generated by reversing the roles of training and testing datasets in the previous steps.  However, we are not certain whether the function constructed from the counfounding vavriable capture the entirety of variance in the treatment variable, which is why we performed the same procedure to biomass as well to ensure the final causal regression is doubly robust. 
+
+While it is possible to adjust the cost ratios of false positives and false negatives in the prediction outcomes for the treatment classification, no such adjustments were made in this study. The goals of the prediction is to best approximate and eliminate the confounding effects from treatment, not to take actions based on which coral reef is more likely to receive treatment. The treatment classification machine is an intermediate step and thus the ratio between the different types of errors does not provide insights into the goal of the government to assess the effectiveness of MAP.
+
+```{r,echo=T}
+fit.treat.1 <- gbm(Treatment~Prop.HC+Prop.SD+Chain+Median.Height,data=dat1,interaction.depth=4,n.minobsinnode=1,shrinkage=0.001,n.trees=1000,distribution="bernoulli")
+#gbm.perf(fit.treat.1,oobag.curve=T,method="OOB",overlay=F)
+summary.gbm(fit.treat.1,n.trees=960,method=relative.influence,normalize=T)
+```
+```{r}
+plot(fit.treat.1,"Prop.SD",960,type="response")
+```
+```{r}
+plot(fit.treat.1,"Chain",960,type="response")
+```
+
+Each boosting machine for each of the dataset requires tuning of four parameters: nummber of trees(n.trees), depth of interaction(interaction.depth), terminal observations (minobsinnode) and learning/shrinkage rate (shrinkage). The optimal parameter combination is determine by comoparing the minimal loss score across different combinations. For treatment the distribution the loss score will be bernoulli deviance since the distribution fammily is binomial. For both boosting machines in the treatment case, we discovered that the minimal bernoulli deviance was found through a combination of depth of 4, 1 terminal observation and 0.001 shrinkage rate. For optimal number of 960 trees in using data set 1 as training set, we obtained 0.85 bernoulli deviance (Figure x) while in the case of data set 2, 630 trees returned a 1.05 bernoulli deviance (Figure x). We then applied the boosting machines to the unused dataset and obtained the fitted values and then the purged dataset as specified in the previous paragraph.
+
+In additional, we plotted the relative influence of each confounding variable on treatment. Proportion of sand in both gbm machines take the lead with over 30% contribution followed by surface area (Chain) ranging from 20-30% (Figure x and x). To observe exactly how these two leading variables influence treatment we also plotted the relative dependence plots of their relationships (Figure x and x). Here we can observe that in both graphs, the treatment's conditional probability increased as the coral reef's proportion of sand area increased. This was previously hinted by the signficant difference found between the two coral reef's sand area. However, the surface area graphs seem to conflict each other. In one case the treated coral reef has a polarized distribution of surface area, with the highest conditional probabilities of treatment around 1.2 and 1.7 While in the second case it's the other way around as the conditional probabilities . This likely means that in fact surface area does not have a significant relationship with treatment as the difference in partial dependence curves is produced by the random division of data.
+```{r,echo=F}
+preds.treat.1<-predict(fit.treat.1,newdata=dat2,type="response",n.tree=960)
+purged.treat.1<-as.integer(dat2$Treatment)-preds.treat.1
+```
+
+```{r,echo=T}
+fit.treat.2 <- gbm(Treatment~Prop.HC+Prop.SD+Chain+Median.Height,data=dat2,interaction.depth=4,n.minobsinnode=1,shrinkage=0.001,n.trees=1000,distribution="bernoulli")
+#gbm.perf(fit.treat.2,oobag.curve=T,method="OOB",overlay=F)
+summary.gbm(fit.treat.2,n.trees=630,method=relative.influence,normalize=T)
+```
+```{r}
+plot(fit.treat.2,"Prop.SD",630,type="response")
+```
+```{r}
+plot(fit.treat.2,"Chain",630,type="response")
+```
+
+```{r,echo=F}
+preds.treat.2<-predict(fit.treat.2,newdata=dat1,type="response",n.tree=630)
+purged.treat.2<-as.integer(dat1$Treatment)-preds.treat.2
+purged.treat <- c(purged.treat.1,purged.treat.2)
+```
+
+```{r,echo=T}
+fit.mass.1 <- gbm(Mass~Prop.HC+Prop.SD+Chain+Median.Height,data=dat1,interaction.depth=2,n.minobsinnode=5,shrinkage=0.001,n.trees=1000,distribution="gaussian")
+#gbm.perf(fit.mass.1,oobag.curve=T,plot.it=F,method="OOB",overlay=F)
+summary(fit.mass.1,n.trees=780,method=permutation.test.gbm,normalize=T)
+```
+```{r}
+plot(fit.mass.1,"Chain",780)
+```
+
+```{r}
+plot(fit.mass.1,"Prop.SD",780)
+```
+
+```{r}
+plot(fit.mass.1,"Median.Height",780)
+```
+
+```{r,echo=F}
+preds.mass.1<-predict(fit.mass.1,newdata=dat2,type="response",n.tree=780)
+purged.mass.1<-dat2$Mass-preds.mass.1 
+```
+Similar parameter tuning was conducted for both boosting machine with biomass as its target variable and gaussian as its distribution family since the response is numeric. When using data set 1 the optimal parameters include interaction depth of 2, terminal observation of 5 and learning rate of 0.001. This machine minimizes squared error at 120000 with 780 trees (Figure x). Contrastingly when using the second data set as the training set the optimal interaction depth was found to be 4. This second machine minimizes squared error at 220000 with 420 trees (Figure x). Again the two models are applied to the dataset not used during machine tuning and obtained respective fitted values and purged values after subtracting from the actual observations. The purged values for both biomass and treatment were then concatenated to form a dataframe ready for causal inference.
+
+The two relative influence graphs of confounding varaibles from the two datasets seem to be in less agreement than the case for treatment. For example, while Chain accounts for more than 60% of influence in machine obtianed from data set 1, it only accounts for around 10%. Only sand proportion again occupies the top two spots in both cases. This could be a result of random data split but also demonstrates perhaps that biomass is more uniformly effected by all confounding variables than treatment. 
+
+We then plotted the partial dependence plots of three variables that were found in the top 2 of relative influence graphs: sand proportion, median height and surface area (figure x, x, x, x, x and x). We can see that in both machines, the relationship between sand proportion/median height and biomass is largely positively linear with biomass plateauing after 40% and 1.4 generally. The latter relationship makes sense as taller coral reefs provide more habitat for marine animals, however in the former case, it's counterintuitive that the more sand area there is, the greater the biomass. However, this phenomenon could possibly be attributed to the fact that larger fish live in more open areas whereas fish living among the hard corals are smaller. In contrast, biomass' conditional values on surface area peak near the tails in the second machine but displays a more linear increase in the first one. It is likely for the same reason as in treatment boosting models that we are in fact observing a relative stable effect of surface area on biomass, which is masked by the fact that we have divided our dataset into two.
+```{r,echo=T}
+fit.mass.2 <- gbm(Mass~Prop.HC+Prop.SD+Chain+Median.Height,data=dat2,interaction.depth=4,n.minobsinnode=5,shrinkage=0.001,n.trees=1000,distribution="gaussian")
+#gbm.perf(fit.mass.2,oobag.curve=T,plot.it=F,method="OOB",overlay=F)
+summary(fit.mass.2,n.trees=420,method=permutation.test.gbm,normalize=T)
+```
+```{r,echo=F}
+plot(fit.mass.2,"Chain",420)
+```
+
+```{r,echo=F}
+plot(fit.mass.2,"Prop.SD",420)
+```
+```{r,echo=F}
+plot(fit.mass.2,"Median.Height",420)
+```
+
+```{r,echo=F}
+preds.mass.2<-predict(fit.mass.2,newdata=dat1,type="response",n.tree=420)
+purged.mass.2<-dat1$Mass-preds.mass.2
+purged.mass <- c(purged.mass.1,purged.mass.2)
+purged.df <- data.frame(purged.treat,purged.mass)
+```
+
+```{r}
+purged.fit <- lm(purged.mass~purged.treat,data=purged.df)
+summary(purged.fit)
+```
+By fitting a linear regression of purged biomass against purged treatment, we can derive an estimate of the ATE (Average Treatment Effect). From the regression summary above we can see that the on average, applying treatment to a coral reef increases biomass by 658.21 units with standard error of 75.78 and significant p value of 1.37e-14. To validate the standard errors, we created 500 iterations of non-parametric bootstraps of the linear models and extracted the beta 1 coefficient from each iteration. From the histogram below (Figure x), we can see that the bootstrapped distribution of ATE ranges from around 200 to 1200, much larger than the regression standard error suggests, but still with a lower bound greater than 0 which supports the significance of the beta 1 coefficient. 
+```{r, echo=T}
+b1_boot <- array(1:500)
+for (i in 1:500) {
+  index <- sample(1:500,132,replace=T)
+  boot.df <- purged.df[index,]
+  boot.fit <- lm(purged.mass~purged.treat,data=boot.df)
+  b1_boot[i] <- summary(boot.fit)$coefficients[2]
+}
+hist(b1_boot,breaks=20)
+```
+```{r}
+t.test(b1_boot,mu=0)
+```
+Assuming large enough samples for normal distributions, we can perform a one sample t-test of the bootstrap values against the mean of 0. We found a significant difference between the Average Treatment Effect (M=661.3225) and the 0 mean conditions; t(499)=94.181, p<2.2e-16. From this result we can safely conclude that the treatment indeed has a positive causal effect on fish biomass
+```{r}
+qqnorm(b1_boot)
+```
+Furthermore, from the close linearity quantile-quantile plot of the bootstrapped values, we can see that the bootstrap distribution is apprxoimately normal. The normality of the distribution is significant as it proves that the bootstrap range is indeed a close approximation of the standard error of ATE if the experiment was to run multiple times with additional test data.  
+
+##Conclusion
+From the initial exploratory analysis of the data we were able to observe differences between the two coral reef's attributes that may have influenced their respective biomass and treatment, preventing us from a direct causal inference between treatment and biomass. After conducting boosting machine to approximate the confounding effects and removing them from treatment and the response, we were able to construct isolated fitted values of the two which allow for causal regression. From a linear model, we observed that independent of all other variables, treatment indeed has significant positive relationship with a coral reef's surrounding biomass. 
+However, this result is gathered from an observational study instead of randomized experiment that would've ensured isolation of the independent effect of treatment. we are not exactly certain of the temporal and spatial influence on the treatment's effectiveness. We had no information on how long before the implementation of MPA started to make significant difference in biomass as well as whether prohibition on fishing would be effective in other areas of the nation's oceanic territories. Thus, we recommend further study on potential missing confounding effect of the treatment's effectiveness on restoring biomass. Nevertheless, we have achieved the best approximation from the data given and it appears that treatment has definitive positive effect on increasing coral reef's biomass. We recommend the government to further impose the MPA with caution near other coral reef to preserve the habitat and marine life in the region. 
+
